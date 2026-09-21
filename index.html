@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Kompas Kiblat</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🕋 PANRITA FALAK
+    </h1>
+
+    <p>GPS + Kompas menuju Ka'bah</p>
+
+    <button id="startButton">
+        📍 MULAI GPS & KOMPAS
+    </button>
+
+    <div class="result">
+
+        <h2>📍 Lokasi</h2>
+
+        <p>
+            Latitude:
+            <strong id="latitude">-</strong>
+        </p>
+
+        <p>
+            Longitude:
+            <strong id="longitude">-</strong>
+        </p>
+
+        <p>
+            Akurasi GPS:
+            <strong id="accuracy">-</strong>
+        </p>
+
+    </div>
+
+    <div class="compass">
+
+    <div class="direction north">N</div>
+    <div class="direction east">E</div>
+    <div class="direction south">S</div>
+    <div class="direction west">W</div>
+
+    <div id="arrow">
+    </div>
+
+    <div id="kaabah">🕋</div>
+
+    <div class="center"></div>
+
+</div>
+
+    <div class="result">
+
+        <h2>🧭 Informasi Arah</h2>
+
+        <p>
+            Arah HP:
+            <strong id="heading">-</strong>
+        </p>
+
+        <p>
+            Azimut Kiblat:
+            <strong id="qibla">-</strong>
+        </p>
+
+        <p>
+            Selisih:
+            <strong id="difference">-</strong>
+        </p>
+
+        <p>
+            Jarak Ka'bah:
+            <strong id="distance">-</strong>
+        </p>
+
+    </div>
+
+    <p id="status">
+        Tekan tombol untuk memulai.
+    </p>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+</html>
+<link rel="stylesheet" href="style.css">
