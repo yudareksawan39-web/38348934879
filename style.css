@@ -89,29 +89,41 @@ button {
 
 /* JARUM */
 #arrow {
-    position: absolute;
+     position: absolute;
+
+    width: 12px;
+    height: 105px;
+
     left: 50%;
     top: 50%;
-    width: 12px;
-    height: 110px;
+
     background: red;
-    transform-origin: 50% 90%;
-    transform: translate(-50%, -90%) rotate(0deg);
-    border-radius: 8px;
-    z-index: 4;
+    border-radius: 10px;
+
+    /* TITIK PUTAR DI PANGKAL JARUM */
+    transform-origin: 50% 100%;
+
+    /* PANGKAL JARUM TEPAT DI TENGAH */
+    transform: translate(-50%, -100%) rotate(0deg);
+
+    z-index: 5;
+}
 }
 
 /* UJUNG JARUM */
 #arrow::before {
     content: "";
+
     position: absolute;
-    top: -18px;
+
+    top: -22px;
     left: 50%;
+
     transform: translateX(-50%);
-    border-left: 15px solid transparent;
-    border-right: 15px solid transparent;
-    border-bottom: 25px solid red;
-}
+
+    border-left: 16px solid transparent;
+    border-right: 16px solid transparent;
+    border-bottom: 28px solid red;
 
 /* KA'BAH */
 #kaabah {
