@@ -1,135 +1,113 @@
-// ==========================================
+// =====================================================
+// PANRITA FALAK
+// KOMPAS ARAH KIBLAT + GPS + WAKTU SALAT
+// =====================================================
+
+// ===============================
 // KOORDINAT KA'BAH
-// ==========================================
+// ===============================
 
 const KAABAH_LAT = 21.422487;
 const KAABAH_LON = 39.826206;
 
 
-// ==========================================
-// ELEMEN HTML
-// ==========================================
+// ===============================
+// VARIABEL GLOBAL
+// ===============================
 
-const startButton =
-    document.getElementById("startButton");
+let currentLatitude = null;
+let currentLongitude = null;
+let currentAccuracy = null;
 
-const latitudeElement =
-    document.getElementById("latitude");
-
-const longitudeElement =
-    document.getElementById("longitude");
-
-const accuracyElement =
-    document.getElementById("accuracy");
-
-const headingElement =
-    document.getElementById("heading");
-
-const qiblaElement =
-    document.getElementById("qibla");
-
-const differenceElement =
-    document.getElementById("difference");
-
-const distanceElement =
-    document.getElementById("distance");
-
-const statusElement =
-    document.getElementById("status");
-
-const arrowElement =
-    document.getElementById("arrow");
-
-
-// ==========================================
-// VARIABEL
-// ==========================================
-
-let qiblaAzimuth = null;
+let qiblaBearing = null;
 let currentHeading = null;
-let gpsWatchId = null;
+
+let prayerTimesToday = {};
+
+let compassStarted = false;
+let usingAbsoluteSensor = false;
 
 
-// ==========================================
-// KONVERSI
-// ==========================================
+// ===============================
+// FUNGSI ANGKA SUDUT
+// ===============================
 
-function toRadians(degrees) {
-    return degrees * Math.PI / 180;
+function normalizeAngle(angle) {
+    return ((angle % 360) + 360) % 360;
 }
 
 
-function toDegrees(radians) {
-    return radians * 180 / Math.PI;
-}
+// ===============================
+// HITUNG ARAH KIBLAT
+// ===============================
+//
+// Rumus azimut geodesik:
+// bearing = atan2(
+//   sin(dLon) * cos(lat2),
+//   cos(lat1) * sin(lat2)
+//   - sin(lat1) * cos(lat2) * cos(dLon)
+// )
+//
+// Hasil: 0° - 360°
+// 0°   = Utara
+// 90°  = Timur
+// 180° = Selatan
+// 270° = Barat
+// ===============================
 
+function calculateQiblaBearing(latitude, longitude) {
 
-// ==========================================
-// HITUNG AZIMUT KIBLAT
-// ==========================================
+    const lat1 = latitude * Math.PI / 180;
+    const lat2 = KAABAH_LAT * Math.PI / 180;
 
-function calculateQibla(latitude, longitude) {
-
-    const lat1 = toRadians(latitude);
-    const lat2 = toRadians(KAABAH_LAT);
-
-    const deltaLongitude =
-        toRadians(KAABAH_LON - longitude);
+    const deltaLon =
+        (KAABAH_LON - longitude) * Math.PI / 180;
 
     const y =
-        Math.sin(deltaLongitude);
+        Math.sin(deltaLon) *
+        Math.cos(lat2);
 
     const x =
         Math.cos(lat1) *
-        Math.tan(lat2)
-        -
+        Math.sin(lat2) -
         Math.sin(lat1) *
-        Math.cos(deltaLongitude);
+        Math.cos(lat2) *
+        Math.cos(deltaLon);
 
-    let azimuth =
-        toDegrees(
-            Math.atan2(y, x)
-        );
+    const bearing =
+        Math.atan2(y, x) *
+        180 / Math.PI;
 
-    azimuth =
-        (azimuth + 360) % 360;
-
-    return azimuth;
+    return normalizeAngle(bearing);
 }
 
 
-// ==========================================
-// HITUNG JARAK
-// ==========================================
+// ===============================
+// HITUNG JARAK KE KA'BAH
+// ===============================
 
-function calculateDistance(latitude, longitude) {
+function calculateDistance(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+) {
 
     const R = 6371;
 
-    const lat1 =
-        toRadians(latitude);
+    const dLat =
+        (lat2 - lat1) *
+        Math.PI / 180;
 
-    const lat2 =
-        toRadians(KAABAH_LAT);
-
-    const deltaLatitude =
-        toRadians(
-            KAABAH_LAT - latitude
-        );
-
-    const deltaLongitude =
-        toRadians(
-            KAABAH_LON - longitude
-        );
+    const dLon =
+        (lon2 - lon1) *
+        Math.PI / 180;
 
     const a =
-        Math.sin(deltaLatitude / 2) ** 2
-        +
-        Math.cos(lat1)
-        *
-        Math.cos(lat2)
-        *
-        Math.sin(deltaLongitude / 2) ** 2;
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
 
     const c =
         2 *
@@ -142,24 +120,107 @@ function calculateDistance(latitude, longitude) {
 }
 
 
-// ==========================================
-// NORMALISASI SUDUT
-// ==========================================
+// ===============================
+// KONVERSI DERAJAT KE ARAH
+// ===============================
 
-function normalizeAngle(angle) {
+function getDirectionName(degrees) {
 
-    return (
-        (angle + 540) % 360
-    ) - 180;
+    const directions = [
+        "Utara",
+        "Timur Laut",
+        "Timur",
+        "Tenggara",
+        "Selatan",
+        "Barat Daya",
+        "Barat",
+        "Barat Laut"
+    ];
 
+    const index =
+        Math.round(degrees / 45) % 8;
+
+    return directions[index];
 }
 
 
-// ==========================================
-// UPDATE POSISI GPS
-// ==========================================
+// ===============================
+// UPDATE TAMPILAN KIBLAT
+// ===============================
 
-function updateGPS(position) {
+function updateQiblaDisplay() {
+
+    if (qiblaBearing === null) {
+        return;
+    }
+
+    const qiblaElement =
+        document.getElementById("qiblaDirection");
+
+    if (!qiblaElement) {
+        return;
+    }
+
+    qiblaElement.textContent =
+        qiblaBearing.toFixed(2) +
+        "° " +
+        getDirectionName(qiblaBearing);
+}
+
+
+// ===============================
+// UPDATE JARUM KIBLAT
+// ===============================
+
+function updateNeedle() {
+
+    if (
+        qiblaBearing === null ||
+        currentHeading === null
+    ) {
+        return;
+    }
+
+    /*
+       Jarum menunjukkan arah kiblat
+       relatif terhadap arah HP.
+
+       Contoh:
+
+       Kiblat = 292°
+       HP menghadap = 250°
+
+       Jarum:
+       292 - 250
+       = 42°
+
+       Artinya jarum bergerak 42°
+       ke kanan dari arah depan HP.
+    */
+
+    const relativeAngle =
+        normalizeAngle(
+            qiblaBearing -
+            currentHeading
+        );
+
+    const needle =
+        document.getElementById("needle");
+
+    if (!needle) {
+        return;
+    }
+
+    needle.style.transform =
+        `rotate(${relativeAngle}deg)`;
+}
+
+
+// ===============================
+// GPS BERHASIL
+// ===============================
+
+async function updateGPS(position) {
 
     const latitude =
         position.coords.latitude;
@@ -170,95 +231,193 @@ function updateGPS(position) {
     const accuracy =
         position.coords.accuracy;
 
+    currentLatitude = latitude;
+    currentLongitude = longitude;
+    currentAccuracy = accuracy;
+
 
     // Tampilkan koordinat
 
-    latitudeElement.textContent =
-        latitude.toFixed(6) + "°";
+    document.getElementById(
+        "latitude"
+    ).textContent =
+        latitude.toFixed(6);
 
-    longitudeElement.textContent =
-        longitude.toFixed(6) + "°";
+    document.getElementById(
+        "longitude"
+    ).textContent =
+        longitude.toFixed(6);
 
-    accuracyElement.textContent =
-        "± " +
+    document.getElementById(
+        "accuracy"
+    ).textContent =
+        "±" +
         accuracy.toFixed(1) +
         " m";
 
 
-    // Hitung azimut
+    // ===============================
+    // HITUNG KIBLAT
+    // ===============================
 
-    qiblaAzimuth =
-        calculateQibla(
+    qiblaBearing =
+        calculateQiblaBearing(
             latitude,
             longitude
         );
 
-
-    qiblaElement.textContent =
-        qiblaAzimuth.toFixed(2) + "°";
+    updateQiblaDisplay();
 
 
-    // Hitung jarak
+    // ===============================
+    // HITUNG JARAK
+    // ===============================
 
     const distance =
         calculateDistance(
             latitude,
-            longitude
+            longitude,
+            KAABAH_LAT,
+            KAABAH_LON
         );
 
+    document.getElementById(
+        "distance"
+    ).textContent =
+        distance.toFixed(2) +
+        " km";
 
-    distanceElement.textContent =
-        distance.toFixed(2) + " km";
+
+    // ===============================
+    // STATUS GPS
+    // ===============================
+
+    document.getElementById(
+        "status"
+    ).textContent =
+        "✓ GPS aktif • Kiblat " +
+        qiblaBearing.toFixed(2) +
+        "°";
 
 
-    updateCompass();
+    // ===============================
+    // WAKTU SALAT
+    // ===============================
 
-    statusElement.textContent =
-        "GPS aktif.";
+    await calculatePrayerTimes(
+        latitude,
+        longitude
+    );
+
+
+    // Update jarum
+
+    updateNeedle();
 }
 
 
-// ==========================================
-// UPDATE KOMPAS
-// ==========================================
+// ===============================
+// GPS ERROR
+// ===============================
 
-function updateCompass() {
+function gpsError(error) {
 
-    if (
-        currentHeading === null ||
-        qiblaAzimuth === null
-    ) {
+    let message =
+        "GPS tidak dapat digunakan.";
+
+    if (error.code === 1) {
+        message =
+            "Izin lokasi ditolak.";
+    }
+
+    if (error.code === 2) {
+        message =
+            "Lokasi tidak tersedia.";
+    }
+
+    if (error.code === 3) {
+        message =
+            "GPS terlalu lama merespons.";
+    }
+
+    document.getElementById(
+        "status"
+    ).textContent = message;
+
+    console.error(
+        "GPS ERROR:",
+        error
+    );
+}
+
+
+// ===============================
+// MULAI GPS
+// ===============================
+
+function startGPS() {
+
+    if (!navigator.geolocation) {
+
+        document.getElementById(
+            "status"
+        ).textContent =
+            "Browser tidak mendukung GPS.";
+
         return;
     }
 
-
-    headingElement.textContent =
-        currentHeading.toFixed(1) + "°";
-
-
-    const difference =
-        normalizeAngle(
-            qiblaAzimuth -
-            currentHeading
-        );
-
-
-    differenceElement.textContent =
-        difference.toFixed(1) + "°";
-
-
-    // Putar ikon Ka'bah menuju Kiblat
-
-    arrowElement.style.transform =
-        "translate(-50%, -50%) rotate(" +
-        difference +
-        "deg)";
+    navigator.geolocation.watchPosition(
+        updateGPS,
+        gpsError,
+        {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 15000
+        }
+    );
 }
 
 
-// ==========================================
-// SENSOR ORIENTASI
-// ==========================================
+// =====================================================
+// KOMPAS
+// =====================================================
+
+
+// ===============================
+// HALUSKAN GERAKAN KOMPAS
+// ===============================
+
+function smoothAngle(
+    oldAngle,
+    newAngle,
+    factor = 0.15
+) {
+
+    if (oldAngle === null) {
+        return newAngle;
+    }
+
+    let difference =
+        normalizeAngle(
+            newAngle -
+            oldAngle
+        );
+
+    if (difference > 180) {
+        difference -= 360;
+    }
+
+    return normalizeAngle(
+        oldAngle +
+        difference * factor
+    );
+}
+
+
+// ===============================
+// BACA SENSOR KOMPAS
+// ===============================
 
 function handleOrientation(event) {
 
@@ -269,68 +428,119 @@ function handleOrientation(event) {
 
     if (
         typeof event.webkitCompassHeading ===
-        "number"
+        "number" &&
+        !isNaN(event.webkitCompassHeading)
     ) {
 
         heading =
             event.webkitCompassHeading;
-
     }
 
 
-    // Browser lain
+    // Sensor absolute
 
     else if (
-        typeof event.alpha === "number"
+        event.absolute === true &&
+        typeof event.alpha ===
+        "number"
     ) {
 
         heading =
             360 - event.alpha;
 
+        usingAbsoluteSensor = true;
     }
 
 
-    if (heading !== null) {
+    // Sensor biasa
 
-        currentHeading =
-            (heading + 360) % 360;
+    else if (
+        typeof event.alpha ===
+        "number"
+    ) {
 
-        updateCompass();
-
+        heading =
+            360 - event.alpha;
     }
+
+
+    if (
+        heading === null ||
+        isNaN(heading)
+    ) {
+        return;
+    }
+
+
+    heading =
+        normalizeAngle(heading);
+
+
+    currentHeading =
+        smoothAngle(
+            currentHeading,
+            heading,
+            0.20
+        );
+
+
+    document.getElementById(
+        "heading"
+    ).textContent =
+        currentHeading.toFixed(1) +
+        "°";
+
+
+    updateNeedle();
 }
 
 
-// ==========================================
-// MEMULAI KOMPAS
-// ==========================================
+// ===============================
+// AKTIFKAN KOMPAS
+// ===============================
 
 async function startCompass() {
 
+    if (compassStarted) {
+        return;
+    }
+
     try {
 
-        // Beberapa browser meminta izin sensor
+        /*
+           iPhone / Safari meminta izin sensor
+           melalui user interaction.
+        */
 
         if (
             typeof DeviceOrientationEvent !==
             "undefined" &&
-            typeof DeviceOrientationEvent.requestPermission ===
-            "function"
+
+            typeof DeviceOrientationEvent
+                .requestPermission ===
+                "function"
         ) {
 
             const permission =
                 await DeviceOrientationEvent
-                    .requestPermission(true);
+                    .requestPermission();
 
-            if (permission !== "granted") {
+            if (
+                permission !==
+                "granted"
+            ) {
 
-                statusElement.textContent =
+                document.getElementById(
+                    "status"
+                ).textContent =
                     "Izin sensor kompas ditolak.";
 
                 return;
             }
         }
 
+
+        // Sensor absolut
 
         window.addEventListener(
             "deviceorientationabsolute",
@@ -339,6 +549,8 @@ async function startCompass() {
         );
 
 
+        // Sensor umum
+
         window.addEventListener(
             "deviceorientation",
             handleOrientation,
@@ -346,75 +558,534 @@ async function startCompass() {
         );
 
 
-        statusElement.textContent =
-            "Sensor kompas aktif.";
+        compassStarted = true;
+
+
+        document.getElementById(
+            "status"
+        ).textContent =
+            "✓ Kompas aktif. Kalibrasikan HP dengan menjauhkannya dari benda magnetik.";
 
     }
 
     catch (error) {
 
-        statusElement.textContent =
-            "Sensor kompas gagal: " +
-            error.message;
+        console.error(
+            "COMPASS ERROR:",
+            error
+        );
 
+        document.getElementById(
+            "status"
+        ).textContent =
+            "Sensor kompas tidak dapat digunakan.";
     }
 }
 
 
-// ==========================================
-// MULAI GPS
-// ==========================================
+// =====================================================
+// WAKTU
+// =====================================================
 
-function startGPS() {
+function updateRealTimeClock() {
 
-    if (!navigator.geolocation) {
+    const now =
+        new Date();
 
-        statusElement.textContent =
-            "GPS tidak tersedia di browser.";
+    const hours =
+        String(
+            now.getHours()
+        ).padStart(2, "0");
 
+    const minutes =
+        String(
+            now.getMinutes()
+        ).padStart(2, "0");
+
+    const seconds =
+        String(
+            now.getSeconds()
+        ).padStart(2, "0");
+
+    const clock =
+        document.getElementById(
+            "realTimeClock"
+        );
+
+    if (clock) {
+
+        clock.textContent =
+            `${hours}:${minutes}:${seconds}`;
+    }
+}
+
+updateRealTimeClock();
+
+setInterval(
+    updateRealTimeClock,
+    1000
+);
+
+
+// =====================================================
+// WAKTU SALAT
+// =====================================================
+
+/*
+   AlAdhan menyediakan metode:
+   20 = Kementerian Agama Republik Indonesia
+
+   school:
+   0 = Shafi / standar
+*/
+
+const PRAYER_METHOD = 20;
+const PRAYER_SCHOOL = 0;
+
+
+async function calculatePrayerTimes(
+    latitude,
+    longitude
+) {
+
+    try {
+
+        const now =
+            new Date();
+
+        const day =
+            String(
+                now.getDate()
+            ).padStart(2, "0");
+
+        const month =
+            String(
+                now.getMonth() + 1
+            ).padStart(2, "0");
+
+        const year =
+            now.getFullYear();
+
+        const date =
+            `${day}-${month}-${year}`;
+
+
+        const url =
+            "https://api.aladhan.com/v1/timings/" +
+            date +
+            "?latitude=" +
+            encodeURIComponent(latitude) +
+            "&longitude=" +
+            encodeURIComponent(longitude) +
+            "&method=" +
+            PRAYER_METHOD +
+            "&school=" +
+            PRAYER_SCHOOL;
+
+
+        const response =
+            await fetch(url);
+
+
+        if (!response.ok) {
+            throw new Error(
+                "Gagal mengambil data waktu salat."
+            );
+        }
+
+
+        const result =
+            await response.json();
+
+
+        if (
+            result.code !== 200 ||
+            !result.data
+        ) {
+
+            throw new Error(
+                "Data waktu salat tidak tersedia."
+            );
+        }
+
+
+        const timings =
+            result.data.timings;
+
+
+        prayerTimesToday = {
+
+            fajr:
+                cleanPrayerTime(
+                    timings.Fajr
+                ),
+
+            sunrise:
+                cleanPrayerTime(
+                    timings.Sunrise
+                ),
+
+            dhuhr:
+                cleanPrayerTime(
+                    timings.Dhuhr
+                ),
+
+            asr:
+                cleanPrayerTime(
+                    timings.Asr
+                ),
+
+            maghrib:
+                cleanPrayerTime(
+                    timings.Maghrib
+                ),
+
+            isha:
+                cleanPrayerTime(
+                    timings.Isha
+                )
+        };
+
+
+        displayPrayerTimes();
+
+        updateNextPrayer();
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "PRAYER ERROR:",
+            error
+        );
+
+        document.getElementById(
+            "nextPrayer"
+        ).textContent =
+            "Waktu salat gagal dimuat. Periksa koneksi internet.";
+    }
+}
+
+
+// ===============================
+// BERSIHKAN FORMAT WAKTU
+// ===============================
+
+function cleanPrayerTime(value) {
+
+    if (
+        !value ||
+        typeof value !==
+        "string"
+    ) {
+        return null;
+    }
+
+    const match =
+        value.match(
+            /^(\d{1,2}):(\d{2})/
+        );
+
+    if (!match) {
+        return null;
+    }
+
+    return (
+        String(
+            Number(match[1])
+        ).padStart(2, "0") +
+        ":" +
+        match[2]
+    );
+}
+
+
+// ===============================
+// TAMPILKAN WAKTU SALAT
+// ===============================
+
+function displayPrayerTimes() {
+
+    document.getElementById(
+        "fajr"
+    ).textContent =
+        prayerTimesToday.fajr ||
+        "--:--";
+
+
+    document.getElementById(
+        "sunrise"
+    ).textContent =
+        prayerTimesToday.sunrise ||
+        "--:--";
+
+
+    document.getElementById(
+        "dhuhr"
+    ).textContent =
+        prayerTimesToday.dhuhr ||
+        "--:--";
+
+
+    document.getElementById(
+        "asr"
+    ).textContent =
+        prayerTimesToday.asr ||
+        "--:--";
+
+
+    document.getElementById(
+        "maghrib"
+    ).textContent =
+        prayerTimesToday.maghrib ||
+        "--:--";
+
+
+    document.getElementById(
+        "isha"
+    ).textContent =
+        prayerTimesToday.isha ||
+        "--:--";
+}
+
+
+// ===============================
+// WAKTU SALAT BERIKUTNYA
+// ===============================
+
+function updateNextPrayer() {
+
+    if (
+        !prayerTimesToday.fajr
+    ) {
         return;
     }
 
 
-    gpsWatchId =
-        navigator.geolocation.watchPosition(
+    const now =
+        new Date();
 
-            updateGPS,
 
-            function(error) {
+    const prayers = [
 
-                statusElement.textContent =
-                    "GPS gagal: " +
-                    error.message;
+        {
+            name: "Subuh",
+            time: prayerTimesToday.fajr
+        },
 
-            },
+        {
+            name: "Zuhur",
+            time: prayerTimesToday.dhuhr
+        },
 
-            {
-                enableHighAccuracy: true,
+        {
+            name: "Asar",
+            time: prayerTimesToday.asr
+        },
 
-                maximumAge: 0,
+        {
+            name: "Magrib",
+            time: prayerTimesToday.maghrib
+        },
 
-                timeout: 15000
-            }
+        {
+            name: "Isya",
+            time: prayerTimesToday.isha
+        }
+
+    ];
+
+
+    let next = null;
+
+
+    for (
+        const prayer of prayers
+    ) {
+
+        if (!prayer.time) {
+            continue;
+        }
+
+
+        const parts =
+            prayer.time.split(":");
+
+
+        const prayerDate =
+            new Date();
+
+        prayerDate.setHours(
+            Number(parts[0]),
+            Number(parts[1]),
+            0,
+            0
         );
+
+
+        if (
+            prayerDate > now
+        ) {
+
+            next = {
+                name: prayer.name,
+                date: prayerDate
+            };
+
+            break;
+        }
+    }
+
+
+    // Jika semua waktu hari ini sudah lewat,
+    // maka Subuh dianggap berikutnya.
+
+    if (!next) {
+
+        const parts =
+            prayerTimesToday.fajr
+                .split(":");
+
+
+        const tomorrow =
+            new Date();
+
+        tomorrow.setDate(
+            tomorrow.getDate() + 1
+        );
+
+        tomorrow.setHours(
+            Number(parts[0]),
+            Number(parts[1]),
+            0,
+            0
+        );
+
+
+        next = {
+            name: "Subuh",
+            date: tomorrow
+        };
+    }
+
+
+    const difference =
+        next.date.getTime() -
+        now.getTime();
+
+
+    const totalSeconds =
+        Math.max(
+            0,
+            Math.floor(
+                difference / 1000
+            )
+        );
+
+
+    const hours =
+        Math.floor(
+            totalSeconds / 3600
+        );
+
+    const minutes =
+        Math.floor(
+            (totalSeconds % 3600) / 60
+        );
+
+    const seconds =
+        totalSeconds % 60;
+
+
+    document.getElementById(
+        "nextPrayer"
+    ).textContent =
+        "Salat berikutnya: " +
+        next.name +
+        " • " +
+        String(hours).padStart(2, "0") +
+        ":" +
+        String(minutes).padStart(2, "0") +
+        ":" +
+        String(seconds).padStart(2, "0");
 }
 
 
-// ==========================================
-// TOMBOL MULAI
-// ==========================================
+// Update countdown setiap detik
 
-startButton.addEventListener(
-    "click",
-    async function() {
-
-        statusElement.textContent =
-            "Memulai GPS dan kompas...";
-
-
-        await startCompass();
-
-        startGPS();
-
-    }
+setInterval(
+    updateNextPrayer,
+    1000
 );
+
+
+// =====================================================
+// GOOGLE EARTH
+// =====================================================
+
+const earthButton =
+    document.getElementById(
+        "earthButton"
+    );
+
+
+if (earthButton) {
+
+    earthButton.addEventListener(
+        "click",
+        function () {
+
+            if (
+                currentLatitude === null ||
+                currentLongitude === null
+            ) {
+
+                alert(
+                    "Lokasi GPS belum tersedia."
+                );
+
+                return;
+            }
+
+
+            const earthURL =
+                "https://earth.google.com/web/search/" +
+                currentLatitude +
+                "," +
+                currentLongitude;
+
+
+            window.open(
+                earthURL,
+                "_blank"
+            );
+        }
+    );
+}
+
+
+// =====================================================
+// TOMBOL KOMPAS
+// =====================================================
+
+const startCompassButton =
+    document.getElementById(
+        "startCompass"
+    );
+
+
+if (startCompassButton) {
+
+    startCompassButton.addEventListener(
+        "click",
+        startCompass
+    );
+}
+
+
+// =====================================================
+// MULAI GPS OTOMATIS
+// =====================================================
+
+startGPS();
